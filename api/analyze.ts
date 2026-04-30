@@ -89,8 +89,9 @@ async function handleMeta(instagramUrl: string, res: VercelResponse) {
     return;
   }
 
-  // TEST: retorna dades de l'oEmbed sense cridar Gemini
-  res.status(200).json({ caption, thumbnailUrl });
+  const structuredData = await analyzeWithGemini(thumbnailUrl, caption);
+  await publishToDonambauxa(structuredData);
+  res.status(200).json({ message: 'Event created successfully', data: structuredData });
 }
 
 async function handleApify(instagramUrl: string, res: VercelResponse) {
