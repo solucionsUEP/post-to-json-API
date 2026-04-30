@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ApifyClient } from 'apify-client';
+import { ProxyAgent, fetch as proxyFetch } from 'undici';
 
 const DONAMBAUXA_API = 'https://www.donambauxa.online/api/events/create';
 const WEBHOOK_URL = 'https://post-to-json-api.vercel.app/api/webhook-apify';
@@ -32,25 +33,34 @@ interface OEmbedResponse {
   error?: { message: string; code: number };
 }
 
-export async function analyzeWithGemini(imageUrl: string, caption: string) {
-  const imageRes = await fetch(imageUrl);
-  if (!imageRes.ok) throw new Error(`Image fetch failed: ${imageRes.status}`);
-
-  const imageBuffer = await imageRes.arrayBuffer();
-  const base64Image = Buffer.from(imageBuffer).toString('base64');
-  const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
-
+export async function analyzeWithGemini(imageUrl: string | null, caption: string) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.0-flash-lite',
     generationConfig: { responseMimeType: 'application/json' },
   });
 
-  const result = await model.generateContent([
-    { inlineData: { data: base64Image, mimeType } },
-    `${GEMINI_PROMPT}\n\nCaption de l'Instagram:\n${caption}`,
-  ]);
+  const parts: Parameters<typeof model.generateContent>[0] = [];
 
+  if (imageUrl) {
+    try {
+      const proxyUrl = `http://auto:${process.env.APIFY_TOKEN}@proxy.apify.com:8000`;
+      const agent = new ProxyAgent(proxyUrl);
+      const imageRes = await proxyFetch(imageUrl, { dispatcher: agent });
+      if (imageRes.ok) {
+        const imageBuffer = await imageRes.arrayBuffer();
+        const base64Image = Buffer.from(imageBuffer).toString('base64');
+        const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
+        parts.push({ inlineData: { data: base64Image, mimeType } });
+      }
+    } catch {
+      console.warn('Image fetch via proxy failed, falling back to text-only analysis');
+    }
+  }
+
+  parts.push(`${GEMINI_PROMPT}\n\nCaption de l'Instagram:\n${caption}`);
+
+  const result = await model.generateContent(parts);
   return JSON.parse(result.response.text());
 }
 
