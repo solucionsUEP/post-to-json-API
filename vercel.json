@@ -2,6 +2,9 @@
   "functions": {
     "api/analyze.ts": {
       "maxDuration": 60
+    },
+    "api/webhook-apify.ts": {
+      "maxDuration": 60
     }
   }
 }
