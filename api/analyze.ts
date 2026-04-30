@@ -41,17 +41,20 @@ export async function analyzeWithGemini(imageUrl: string, caption: string) {
   const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash-8b',
-    generationConfig: { responseMimeType: 'application/json' },
-  });
+  const model = genAI.getGenerativeModel(
+    { model: 'gemini-1.5-flash-8b' },
+    { apiVersion: 'v1' }
+  );
 
   const result = await model.generateContent([
     { inlineData: { data: base64Image, mimeType } },
     `${GEMINI_PROMPT}\n\nCaption de l'Instagram:\n${caption}`,
   ]);
 
-  return JSON.parse(result.response.text());
+  const text = result.response.text();
+  // Elimina possibles wrappers de markdown ```json ... ```
+  const clean = text.replace(/^```json\s*/i, '').replace(/```\s*$/,'').trim();
+  return JSON.parse(clean);
 }
 
 export async function publishToDonambauxa(data: unknown) {
