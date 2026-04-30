@@ -2,6 +2,7 @@
   "name": "post-to-json-api",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "echo 'Run: vercel dev'"
   },
