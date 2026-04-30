@@ -21,8 +21,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const payload = req.body as ApifyWebhookPayload;
   const datasetId = payload?.resource?.defaultDatasetId;
 
+  // Sempre retornem 200 a Apify per evitar reintents automàtics
+  res.status(200).json({ received: true });
+
   if (!datasetId) {
-    res.status(400).json({ error: 'Missing resource.defaultDatasetId in webhook payload' });
+    console.error('Webhook: Missing resource.defaultDatasetId');
     return;
   }
 
@@ -36,19 +39,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const post = items[0];
 
     if (!post?.displayUrl) {
-      res.status(400).json({ error: 'No displayUrl found in dataset' });
+      console.error('Webhook: No displayUrl found in dataset');
       return;
     }
 
     const structuredData = await analyzeWithGemini(post.displayUrl, post.caption ?? '');
     await publishToDonambauxa(structuredData);
-
-    res.status(200).json({ message: 'Event created successfully', data: structuredData });
+    console.log('Webhook: Event created successfully');
   } catch (err) {
     console.error('Webhook error:', err);
-    res.status(500).json({
-      error: 'Internal server error',
-      detail: err instanceof Error ? err.message : String(err),
-    });
   }
 }
