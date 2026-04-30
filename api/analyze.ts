@@ -36,7 +36,7 @@ interface OEmbedResponse {
 export async function analyzeWithGemini(imageUrl: string | null, caption: string) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash-lite',
+    model: 'gemini-2.5-flash',
     generationConfig: { responseMimeType: 'application/json' },
   });
 
