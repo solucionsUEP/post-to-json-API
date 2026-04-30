@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "vercel dev"
+    "dev": "echo 'Run: vercel dev'"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

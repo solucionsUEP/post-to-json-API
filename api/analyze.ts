@@ -64,46 +64,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
 
-    // 2. Fetch thumbnail image and convert to Base64
-    const imageRes = await fetch(thumbnailUrl);
-    if (!imageRes.ok) {
-      throw new Error(`Image fetch failed: ${imageRes.status}`);
-    }
-
-    const imageBuffer = await imageRes.arrayBuffer();
-    const base64Image = Buffer.from(imageBuffer).toString('base64');
-    const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
-
-    // 3. Analyze with Gemini 1.5 Flash (multimodal)
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      generationConfig: { responseMimeType: 'application/json' },
-    });
-
-    const result = await model.generateContent([
-      { inlineData: { data: base64Image, mimeType } },
-      `${GEMINI_PROMPT}\n\nCaption de l'Instagram:\n${caption}`,
-    ]);
-
-    const structuredData = JSON.parse(result.response.text());
-
-    // 4. POST structured data to donambauxa.online
-    const publishRes = await fetch(DONAMBAUXA_API, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.DONAMBAUXA_SECRET}`,
-      },
-      body: JSON.stringify(structuredData),
-    });
-
-    if (!publishRes.ok) {
-      const errorText = await publishRes.text();
-      throw new Error(`donambauxa API error ${publishRes.status}: ${errorText}`);
-    }
-
-    res.status(200).json({ message: 'Event created successfully', data: structuredData });
+    // TEST: retorna el que ha obtingut l'oEmbed sense continuar
+    res.status(200).json({ caption, thumbnailUrl });
   } catch (err) {
     console.error('Error processing Instagram post:', err);
     res.status(500).json({
