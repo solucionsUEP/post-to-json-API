@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ApifyClient } from 'apify-client';
 import { ProxyAgent, fetch as proxyFetch } from 'undici';
 
-const DONAMBAUXA_API = 'https://www.donambauxa.online/api/events/create';
+const DONAMBAUXA_API = 'https://donambauxa.online/api/requests';
 const WEBHOOK_URL = 'https://post-to-json-api.vercel.app/api/webhook-apify';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -99,9 +99,14 @@ export async function publishToDonambauxa(data: unknown) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.DONAMBAUXA_SECRET}`,
+      'X-API-Key': process.env.DONAMBAUXA_SECRET!,
     },
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      entityType: 'event',
+      action: 'create',
+      description: 'Nou esdeveniment afegit via bot Instagram',
+      proposedData: data,
+    }),
   });
   if (!res.ok) {
     const text = await res.text();
