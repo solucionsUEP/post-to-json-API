@@ -8,8 +8,14 @@ const WEBHOOK_URL = 'https://post-to-json-api.vercel.app/api/webhook-apify';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
-const GEMINI_PROMPT = `Analitza aquesta imatge i el text del caption d'Instagram d'un esdeveniment de música a Mallorca.
-Extreu la programació musical i retorna ÚNICAMENT un objecte JSON vàlid seguint l'esquema schema.org, sense cap text addicional:
+const GEMINI_PROMPT = `Analitza aquesta imatge d'un cartell d'events musicals a Mallorca.
+Cada línia segueix el format: LOCAL, LOCALITAT - NOM_EVENT HH:MM
+Exemple: "CAFE MILANO, ALCÚDIA - COMERCIAL MUSIC 23:00 H"
+  → name = "COMERCIAL MUSIC" (allò que hi ha DESPRÉS del guió)
+  → location.name = "CAFE MILANO" (allò que hi ha ABANS del guió)
+  → addressLocality = "ALCÚDIA"
+
+Retorna ÚNICAMENT un JSON vàlid amb aquesta estructura, sense cap text addicional:
 
 {
   "@context": "https://schema.org",
@@ -20,15 +26,15 @@ Extreu la programació musical i retorna ÚNICAMENT un objecte JSON vàlid segui
   "subEvent": [
     {
       "@type": "MusicEvent",
-      "name": "Nom de l'artista o nom de la festa",
+      "name": "NOM_EVENT (el que hi ha després del guió, sense l'hora)",
       "startDate": "YYYY-MM-DDTHH:MM:00+02:00",
       "location": {
         "@type": "MusicVenue",
-        "name": "Nom del local",
+        "name": "LOCAL (el que hi ha abans del guió)",
         "address": {
           "@type": "PostalAddress",
-          "addressLocality": "Localitat",
-          "addressRegion": "Zona (ex: RAIGUER, LLEVANT, MIGJORN, ES PLA)"
+          "addressLocality": "LOCALITAT",
+          "addressRegion": "Zona (RAIGUER, LLEVANT, MIGJORN o ES PLA)"
         }
       },
       "additionalProperty": {
@@ -42,9 +48,7 @@ Extreu la programació musical i retorna ÚNICAMENT un objecte JSON vàlid segui
 
 Regles:
 - Any: ${CURRENT_YEAR} si la imatge no l'especifica.
-- Colors de categoria: electrònica → #8B5CF6, reggaeton/urbà → #EC4899, live music → #F59E0B, altres → #6B7280.
-- El camp "name" de cada subEvent és el nom de l'artista o la festa, NO el local.
-- El local va a location.name i la localitat a addressLocality.`;
+- Colors: electrònica → #8B5CF6, reggaeton/urbà → #EC4899, live/concert → #F59E0B, altres → #6B7280.`;
 
 interface OEmbedResponse {
   title?: string;
