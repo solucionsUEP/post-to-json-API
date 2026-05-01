@@ -10,20 +10,54 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-interface Event {
+interface SchemaAddress {
+  addressLocality?: string;
+  addressRegion?: string;
+}
+
+interface SchemaLocation {
+  name?: string;
+  address?: SchemaAddress;
+}
+
+interface SchemaProperty {
   name: string;
-  time: string;
-  categoryColor: string;
+  value: string;
+}
+
+interface SubEvent {
+  name: string;
+  startDate: string;
+  location?: SchemaLocation;
+  additionalProperty?: SchemaProperty;
+}
+
+interface EventSeries {
+  name?: string;
+  startDate?: string;
+  subEvent?: SubEvent[];
 }
 
 interface Zone {
   name: string;
-  events: Event[];
+  events: { name: string; venue: string; time: string; color: string }[];
 }
 
-interface Payload {
-  date: string;
-  zones: Zone[];
+function parsePayload(payload: EventSeries): { title: string; zones: Zone[] } {
+  const title = payload.name ?? payload.startDate ?? '';
+
+  const zoneMap = new Map<string, Zone>();
+  for (const sub of payload.subEvent ?? []) {
+    const region = sub.location?.address?.addressRegion ?? 'Altres';
+    const venue = sub.location?.name ?? sub.location?.address?.addressLocality ?? '';
+    const time = sub.startDate ? sub.startDate.substring(11, 16) : '';
+    const color = sub.additionalProperty?.value ?? '#6B7280';
+
+    if (!zoneMap.has(region)) zoneMap.set(region, { name: region, events: [] });
+    zoneMap.get(region)!.events.push({ name: sub.name, venue, time, color });
+  }
+
+  return { title, zones: Array.from(zoneMap.values()) };
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -38,7 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
     });
   }
 
-  let payload: Payload;
+  let payload: EventSeries;
   try {
     payload = await req.json();
   } catch {
@@ -48,12 +82,14 @@ export default async function handler(req: Request): Promise<Response> {
     });
   }
 
-  if (!payload.date || !Array.isArray(payload.zones)) {
-    return new Response(JSON.stringify({ error: 'Missing required fields: date, zones' }), {
+  if (!payload.subEvent) {
+    return new Response(JSON.stringify({ error: 'Missing required field: subEvent' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+
+  const { title, zones } = parsePayload(payload);
 
   try {
     const image = new ImageResponse(
@@ -70,7 +106,6 @@ export default async function handler(req: Request): Promise<Response> {
             color: '#ffffff',
           }}
         >
-          {/* Header */}
           <div
             style={{
               display: 'flex',
@@ -79,50 +114,17 @@ export default async function handler(req: Request): Promise<Response> {
               marginBottom: '48px',
             }}
           >
-            <div
-              style={{
-                fontSize: '28px',
-                fontWeight: 700,
-                letterSpacing: '6px',
-                color: '#a78bfa',
-                textTransform: 'uppercase',
-                marginBottom: '12px',
-              }}
-            >
+            <div style={{ fontSize: '28px', fontWeight: 700, letterSpacing: '6px', color: '#a78bfa', textTransform: 'uppercase', marginBottom: '12px' }}>
               DONA&apos;M BAUXA
             </div>
-            <div
-              style={{
-                fontSize: '52px',
-                fontWeight: 800,
-                color: '#ffffff',
-                letterSpacing: '2px',
-              }}
-            >
-              {payload.date}
+            <div style={{ fontSize: '52px', fontWeight: 800, color: '#ffffff', letterSpacing: '2px' }}>
+              {title}
             </div>
-            <div
-              style={{
-                width: '120px',
-                height: '3px',
-                background: 'linear-gradient(90deg, #a78bfa, #ec4899)',
-                marginTop: '20px',
-                borderRadius: '2px',
-              }}
-            />
+            <div style={{ width: '120px', height: '3px', background: 'linear-gradient(90deg, #a78bfa, #ec4899)', marginTop: '20px', borderRadius: '2px' }} />
           </div>
 
-          {/* Zones */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'row',
-              gap: '32px',
-              flex: 1,
-              flexWrap: 'wrap',
-            }}
-          >
-            {payload.zones.map((zone, zoneIdx) => (
+          <div style={{ display: 'flex', flexDirection: 'row', gap: '32px', flex: 1, flexWrap: 'wrap' }}>
+            {zones.map((zone, zoneIdx) => (
               <div
                 key={zoneIdx}
                 style={{
@@ -136,60 +138,18 @@ export default async function handler(req: Request): Promise<Response> {
                   flexDirection: 'column',
                 }}
               >
-                <div
-                  style={{
-                    fontSize: '22px',
-                    fontWeight: 700,
-                    color: '#a78bfa',
-                    textTransform: 'uppercase',
-                    letterSpacing: '3px',
-                    marginBottom: '24px',
-                    paddingBottom: '16px',
-                    borderBottom: '1px solid rgba(167,139,250,0.3)',
-                  }}
-                >
+                <div style={{ fontSize: '22px', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid rgba(167,139,250,0.3)' }}>
                   {zone.name}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {zone.events.map((event, evtIdx) => (
-                    <div
-                      key={evtIdx}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '14px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '10px',
-                          height: '10px',
-                          borderRadius: '50%',
-                          background: event.categoryColor || '#a78bfa',
-                          flexShrink: 0,
-                          boxShadow: `0 0 8px ${event.categoryColor || '#a78bfa'}`,
-                        }}
-                      />
-                      <div
-                        style={{
-                          fontSize: '16px',
-                          fontWeight: 600,
-                          color: '#f3f4f6',
-                          flex: 1,
-                        }}
-                      >
-                        {event.name}
+                    <div key={evtIdx} style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: event.color, flexShrink: 0, boxShadow: `0 0 8px ${event.color}` }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                        <div style={{ fontSize: '15px', fontWeight: 600, color: '#f3f4f6' }}>{event.name}</div>
+                        {event.venue && <div style={{ fontSize: '12px', color: '#6b7280' }}>{event.venue}</div>}
                       </div>
-                      <div
-                        style={{
-                          fontSize: '15px',
-                          color: '#9ca3af',
-                          fontWeight: 500,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {event.time}
-                      </div>
+                      <div style={{ fontSize: '15px', color: '#9ca3af', fontWeight: 500, flexShrink: 0 }}>{event.time}</div>
                     </div>
                   ))}
                 </div>
@@ -197,34 +157,17 @@ export default async function handler(req: Request): Promise<Response> {
             ))}
           </div>
 
-          {/* Footer */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              marginTop: '40px',
-              fontSize: '14px',
-              color: '#6b7280',
-              letterSpacing: '2px',
-            }}
-          >
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '40px', fontSize: '14px', color: '#6b7280', letterSpacing: '2px' }}>
             donambauxa.online
           </div>
         </div>
       ),
-      {
-        width: 1080,
-        height: 1080,
-      }
+      { width: 1080, height: 1080 }
     );
 
     const responseHeaders = new Headers(image.headers);
     Object.entries(corsHeaders).forEach(([k, v]) => responseHeaders.set(k, v));
-
-    return new Response(image.body, {
-      status: 200,
-      headers: responseHeaders,
-    });
+    return new Response(image.body, { status: 200, headers: responseHeaders });
   } catch (err) {
     console.error('Error generating image:', err);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {

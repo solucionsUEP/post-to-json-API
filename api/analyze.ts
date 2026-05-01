@@ -6,26 +6,45 @@ import { ProxyAgent, fetch as proxyFetch } from 'undici';
 const DONAMBAUXA_API = 'https://www.donambauxa.online/api/events/create';
 const WEBHOOK_URL = 'https://post-to-json-api.vercel.app/api/webhook-apify';
 
+const CURRENT_YEAR = new Date().getFullYear();
+
 const GEMINI_PROMPT = `Analitza aquesta imatge i el text del caption d'Instagram d'un esdeveniment de música a Mallorca.
-Extreu la programació musical i retorna ÚNICAMENT un objecte JSON vàlid amb aquesta estructura exacta, sense cap text addicional:
+Extreu la programació musical i retorna ÚNICAMENT un objecte JSON vàlid seguint l'esquema schema.org, sense cap text addicional:
+
 {
-  "date": "DD/MM/YYYY",
-  "zones": [
+  "@context": "https://schema.org",
+  "@type": "EventSeries",
+  "name": "Nom de la nit (ex: Divendres 1 Maig)",
+  "startDate": "YYYY-MM-DD",
+  "location": { "@type": "Place", "name": "Mallorca" },
+  "subEvent": [
     {
-      "name": "Nom de la zona o escenari",
-      "events": [
-        {
-          "name": "Nom de l'artista o activitat",
-          "time": "HH:MM",
-          "categoryColor": "#RRGGBB"
+      "@type": "MusicEvent",
+      "name": "Nom de l'artista o nom de la festa",
+      "startDate": "YYYY-MM-DDTHH:MM:00+02:00",
+      "location": {
+        "@type": "MusicVenue",
+        "name": "Nom del local",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Localitat",
+          "addressRegion": "Zona (ex: RAIGUER, LLEVANT, MIGJORN, ES PLA)"
         }
-      ]
+      },
+      "additionalProperty": {
+        "@type": "PropertyValue",
+        "name": "categoryColor",
+        "value": "#RRGGBB"
+      }
     }
   ]
 }
 
-Assigna colors de categoria de manera consistent: música electrònica → #8B5CF6, reggaeton/urbà → #EC4899, live music → #F59E0B, altres → #6B7280.
-Si no trobes informació clara per algun camp, usa valors per defecte raonables.`;
+Regles:
+- Any: ${CURRENT_YEAR} si la imatge no l'especifica.
+- Colors de categoria: electrònica → #8B5CF6, reggaeton/urbà → #EC4899, live music → #F59E0B, altres → #6B7280.
+- El camp "name" de cada subEvent és el nom de l'artista o la festa, NO el local.
+- El local va a location.name i la localitat a addressLocality.`;
 
 interface OEmbedResponse {
   title?: string;
