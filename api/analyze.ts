@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ApifyClient } from 'apify-client';
 import { ProxyAgent, fetch as proxyFetch } from 'undici';
 
-const DONAMBAUXA_API = 'https://donambauxa.online/api/requests';
+const DONAMBAUXA_API = 'https://www.donambauxa.online/api/requests';
 const WEBHOOK_URL = 'https://post-to-json-api.vercel.app/api/webhook-apify';
 
 const CURRENT_YEAR = new Date().getFullYear();
