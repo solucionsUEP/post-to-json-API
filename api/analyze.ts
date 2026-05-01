@@ -33,7 +33,16 @@ interface OEmbedResponse {
   error?: { message: string; code: number };
 }
 
-export async function analyzeWithGemini(imageUrl: string | null, caption: string) {
+interface ImageInline {
+  data: string;
+  mimeType: string;
+}
+
+export async function analyzeWithGemini(
+  imageUrl: string | null,
+  caption: string,
+  imageInline?: ImageInline
+) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
@@ -42,7 +51,9 @@ export async function analyzeWithGemini(imageUrl: string | null, caption: string
 
   const parts: Parameters<typeof model.generateContent>[0] = [];
 
-  if (imageUrl) {
+  if (imageInline) {
+    parts.push({ inlineData: { data: imageInline.data, mimeType: imageInline.mimeType } });
+  } else if (imageUrl) {
     try {
       const proxyUrl = `http://auto:${process.env.APIFY_TOKEN}@proxy.apify.com:8000`;
       const agent = new ProxyAgent(proxyUrl);
@@ -79,18 +90,31 @@ export async function publishToDonambauxa(data: unknown) {
   }
 }
 
-async function handleMeta(instagramUrl: string, res: VercelResponse) {
+async function fetchCaptionApify(instagramUrl: string): Promise<string> {
+  const client = new ApifyClient({ token: process.env.APIFY_TOKEN });
+  const run = await client.actor('apify/instagram-scraper').call({
+    directUrls: [instagramUrl],
+    resultsType: 'posts',
+    resultsLimit: 1,
+  });
+  const { items } = await client.dataset(run.defaultDatasetId).listItems();
+  return (items[0] as { caption?: string })?.caption ?? '';
+}
+
+async function fetchOembed(instagramUrl: string): Promise<OEmbedResponse> {
   const accessToken = `${process.env.META_APP_ID}|${process.env.META_CLIENT_TOKEN}`;
   const oembedRes = await fetch(
     `https://graph.facebook.com/v18.0/instagram_oembed?url=${encodeURIComponent(instagramUrl)}&access_token=${accessToken}`
   );
-
   if (!oembedRes.ok) {
     const errBody = (await oembedRes.json()) as OEmbedResponse;
     throw new Error(`oEmbed API error ${oembedRes.status}: ${errBody.error?.message ?? 'unknown'}`);
   }
+  return oembedRes.json() as Promise<OEmbedResponse>;
+}
 
-  const oembed = (await oembedRes.json()) as OEmbedResponse;
+async function handleMeta(instagramUrl: string, res: VercelResponse) {
+  const oembed = await fetchOembed(instagramUrl);
   const caption = oembed.title ?? '';
   const thumbnailUrl = oembed.thumbnail_url;
 
@@ -113,22 +137,36 @@ async function handleApify(instagramUrl: string, res: VercelResponse) {
   res.status(202).json({ message: 'Scraping initiated', runId: run.id });
 }
 
+// imageBase64 + instagramUrl: extreu caption via Apify i analitza amb la imatge en base64
+async function handleImageBase64(
+  imageBase64: string,
+  imageMimeType: string,
+  instagramUrl: string,
+  res: VercelResponse
+) {
+  const caption = await fetchCaptionApify(instagramUrl);
+  const structuredData = await analyzeWithGemini(null, caption, { data: imageBase64, mimeType: imageMimeType });
+  await publishToDonambauxa(structuredData);
+  res.status(200).json({ message: 'Event created successfully', data: structuredData });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
 
-  const { instagramUrl, provider, imageUrl, caption } = req.body as {
+  const { instagramUrl, provider, imageBase64, imageMimeType, caption } = req.body as {
     instagramUrl?: string;
     provider?: 'meta' | 'apify';
-    imageUrl?: string;
+    imageBase64?: string;
+    imageMimeType?: string;
     caption?: string;
   };
 
   try {
-    // Mode A: Instagram URL amb provider
-    if (instagramUrl) {
+    // Mode A: Instagram URL amb provider (meta o apify async)
+    if (instagramUrl && !imageBase64) {
       if (!provider || (provider !== 'meta' && provider !== 'apify')) {
         res.status(400).json({ error: 'Field "provider" must be "meta" or "apify" when instagramUrl is provided' });
         return;
@@ -138,16 +176,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
 
-    // Mode B: imageUrl + caption manual
-    if (imageUrl && caption !== undefined) {
-      const structuredData = await analyzeWithGemini(imageUrl, caption);
+    // Mode B: imageBase64 + instagramUrl (caption via Apify)
+    if (imageBase64 && instagramUrl) {
+      if (!imageMimeType) {
+        res.status(400).json({ error: 'Field "imageMimeType" is required with imageBase64' });
+        return;
+      }
+      await handleImageBase64(imageBase64, imageMimeType, instagramUrl, res);
+      return;
+    }
+
+    // Mode E: imageBase64 + caption manual
+    if (imageBase64 && caption !== undefined) {
+      if (!imageMimeType) {
+        res.status(400).json({ error: 'Field "imageMimeType" is required with imageBase64' });
+        return;
+      }
+      const structuredData = await analyzeWithGemini(null, caption, { data: imageBase64, mimeType: imageMimeType });
       await publishToDonambauxa(structuredData);
       res.status(200).json({ message: 'Event created successfully', data: structuredData });
       return;
     }
 
     res.status(400).json({
-      error: 'Send { instagramUrl, provider } or { imageUrl, caption }',
+      error: 'Send one of: { instagramUrl, provider } | { imageBase64, imageMimeType, instagramUrl } | { imageBase64, imageMimeType, caption }',
     });
   } catch (err) {
     console.error('Error:', err);

@@ -2,7 +2,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { analyzeWithGemini, publishToDonambauxa } from './analyze.js';
 
 interface ApifyItem {
-  displayUrl?: string;
   caption?: string;
 }
 
@@ -36,12 +35,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const items = (await datasetRes.json()) as ApifyItem[];
     const post = items[0];
 
-    if (!post?.displayUrl) {
-      res.status(200).json({ received: true, error: 'No displayUrl found' });
+    if (!post?.caption) {
+      res.status(200).json({ received: true, error: 'No caption found' });
       return;
     }
 
-    const structuredData = await analyzeWithGemini(post.displayUrl, post.caption ?? '');
+    const structuredData = await analyzeWithGemini(null, post.caption);
     await publishToDonambauxa(structuredData);
 
     res.status(200).json({ received: true, message: 'Event created successfully' });
