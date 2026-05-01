@@ -113,41 +113,21 @@ async function fetchOembed(instagramUrl: string): Promise<OEmbedResponse> {
   return oembedRes.json() as Promise<OEmbedResponse>;
 }
 
-async function handleMeta(instagramUrl: string, res: VercelResponse) {
+async function analyzeMeta(instagramUrl: string): Promise<unknown> {
   const oembed = await fetchOembed(instagramUrl);
   const caption = oembed.title ?? '';
   const thumbnailUrl = oembed.thumbnail_url;
-
-  if (!thumbnailUrl) {
-    res.status(400).json({ error: 'No image found for this post' });
-    return;
-  }
-
-  const structuredData = await analyzeWithGemini(thumbnailUrl, caption);
-  await publishToDonambauxa(structuredData);
-  res.status(200).json({ message: 'Event created successfully', data: structuredData });
+  if (!thumbnailUrl) throw new Error('No image found for this post');
+  return analyzeWithGemini(thumbnailUrl, caption);
 }
 
-async function handleApify(instagramUrl: string, res: VercelResponse) {
-  const client = new ApifyClient({ token: process.env.APIFY_TOKEN });
-  const run = await client.actor('apify/instagram-scraper').start(
-    { directUrls: [instagramUrl], resultsType: 'posts', resultsLimit: 1 },
-    { webhooks: [{ eventTypes: ['ACTOR.RUN.SUCCEEDED'], requestUrl: WEBHOOK_URL }] }
-  );
-  res.status(202).json({ message: 'Scraping initiated', runId: run.id });
-}
-
-// imageBase64 + instagramUrl: extreu caption via Apify i analitza amb la imatge en base64
-async function handleImageBase64(
+async function analyzeImageBase64WithApify(
   imageBase64: string,
   imageMimeType: string,
-  instagramUrl: string,
-  res: VercelResponse
-) {
+  instagramUrl: string
+): Promise<unknown> {
   const caption = await fetchCaptionApify(instagramUrl);
-  const structuredData = await analyzeWithGemini(null, caption, { data: imageBase64, mimeType: imageMimeType });
-  await publishToDonambauxa(structuredData);
-  res.status(200).json({ message: 'Event created successfully', data: structuredData });
+  return analyzeWithGemini(null, caption, { data: imageBase64, mimeType: imageMimeType });
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
@@ -156,12 +136,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  const { instagramUrl, provider, imageBase64, imageMimeType, caption } = req.body as {
+  const { instagramUrl, provider, imageBase64, imageMimeType, caption, dryRun } = req.body as {
     instagramUrl?: string;
     provider?: 'meta' | 'apify';
     imageBase64?: string;
     imageMimeType?: string;
     caption?: string;
+    dryRun?: boolean;
+  };
+
+  const respond = async (structuredData: unknown) => {
+    if (!dryRun) await publishToDonambauxa(structuredData);
+    res.status(200).json({ dryRun: !!dryRun, data: structuredData });
   };
 
   try {
@@ -171,18 +157,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         res.status(400).json({ error: 'Field "provider" must be "meta" or "apify" when instagramUrl is provided' });
         return;
       }
-      if (provider === 'meta') await handleMeta(instagramUrl, res);
-      else await handleApify(instagramUrl, res);
+      if (provider === 'apify') {
+        const client = new ApifyClient({ token: process.env.APIFY_TOKEN });
+        const run = await client.actor('apify/instagram-scraper').start(
+          { directUrls: [instagramUrl], resultsType: 'posts', resultsLimit: 1 },
+          { webhooks: [{ eventTypes: ['ACTOR.RUN.SUCCEEDED'], requestUrl: WEBHOOK_URL }] }
+        );
+        res.status(202).json({ message: 'Scraping initiated', runId: run.id });
+      } else {
+        await respond(await analyzeMeta(instagramUrl));
+      }
       return;
     }
 
-    // Mode B: imageBase64 + instagramUrl (caption via Apify)
+    // Mode B: imageBase64 + instagramUrl (caption via Apify síncron)
     if (imageBase64 && instagramUrl) {
       if (!imageMimeType) {
         res.status(400).json({ error: 'Field "imageMimeType" is required with imageBase64' });
         return;
       }
-      await handleImageBase64(imageBase64, imageMimeType, instagramUrl, res);
+      await respond(await analyzeImageBase64WithApify(imageBase64, imageMimeType, instagramUrl));
       return;
     }
 
@@ -192,9 +186,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         res.status(400).json({ error: 'Field "imageMimeType" is required with imageBase64' });
         return;
       }
-      const structuredData = await analyzeWithGemini(null, caption, { data: imageBase64, mimeType: imageMimeType });
-      await publishToDonambauxa(structuredData);
-      res.status(200).json({ message: 'Event created successfully', data: structuredData });
+      await respond(await analyzeWithGemini(null, caption, { data: imageBase64, mimeType: imageMimeType }));
       return;
     }
 
