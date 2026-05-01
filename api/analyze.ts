@@ -94,7 +94,55 @@ export async function analyzeWithGemini(
   return JSON.parse(result.response.text());
 }
 
-export async function publishToDonambauxa(data: unknown) {
+const COLOR_TO_CATEGORY: Record<string, string> = {
+  '#8B5CF6': 'electronica',
+  '#EC4899': 'reggaeton',
+  '#F59E0B': 'concert',
+  '#6B7280': 'concert',
+};
+
+interface SubEvent {
+  '@type': string;
+  name: string;
+  startDate: string;
+  location?: {
+    name?: string;
+    address?: {
+      addressLocality?: string;
+      addressRegion?: string;
+    };
+  };
+  additionalProperty?: {
+    name: string;
+    value: string;
+  };
+}
+
+interface EventSeries {
+  '@type': string;
+  subEvent?: SubEvent[];
+}
+
+function toMusicEvent(sub: SubEvent): object {
+  const locality = sub.location?.address?.addressLocality ?? '';
+  const venue = sub.location?.name ?? '';
+  const zone = sub.location?.address?.addressRegion ?? '';
+  const color = sub.additionalProperty?.value ?? '#6B7280';
+  const category = COLOR_TO_CATEGORY[color] ?? 'concert';
+  const locationName = venue ? `${venue}, ${locality}` : locality;
+
+  return {
+    '@type': 'MusicEvent',
+    name: sub.name,
+    zone,
+    category,
+    startDate: sub.startDate,
+    location: { '@type': 'Place', name: locationName },
+    description: `${sub.name} a ${locationName}`,
+  };
+}
+
+async function postOneEvent(event: object): Promise<void> {
   const res = await fetch(DONAMBAUXA_API, {
     method: 'POST',
     headers: {
@@ -105,12 +153,22 @@ export async function publishToDonambauxa(data: unknown) {
       entityType: 'event',
       action: 'create',
       description: 'Nou esdeveniment afegit via bot Instagram',
-      proposedData: data,
+      proposedData: event,
     }),
   });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`donambauxa API error ${res.status}: ${text}`);
+  }
+}
+
+export async function publishToDonambauxa(data: unknown): Promise<void> {
+  const series = data as EventSeries;
+
+  if (series['@type'] === 'EventSeries' && Array.isArray(series.subEvent)) {
+    await Promise.all(series.subEvent.map(sub => postOneEvent(toMusicEvent(sub))));
+  } else {
+    await postOneEvent(data as object);
   }
 }
 
