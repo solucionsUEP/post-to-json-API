@@ -170,7 +170,13 @@ export async function publishToDonambauxa(data: unknown): Promise<void> {
   const series = data as EventSeries;
 
   if (series['@type'] === 'EventSeries' && Array.isArray(series.subEvent)) {
-    await Promise.all(series.subEvent.map(sub => postOneEvent(toMusicEvent(sub))));
+    for (const sub of series.subEvent) {
+      try {
+        await postOneEvent(toMusicEvent(sub));
+      } catch (err) {
+        console.error(`[publishToDonambauxa] error publicant ${(sub as any).name}:`, err);
+      }
+    }
   } else {
     await postOneEvent(data as object);
   }
